@@ -1,182 +1,341 @@
+# app.py
+# Superior University - AI Department Portal (Single-file)
+# Features: Signup (any role), Login, role-based UI (Admin/Student),
+# Students/Courses/Feedback/News stored in CSV, Purple theme.
+# Save as app.py, upload to GitHub, deploy on Streamlit Cloud.
+
 import streamlit as st
 import pandas as pd
 import os
+import hashlib
+from datetime import datetime
 
-# -------------------- FILES --------------------
-student_file = "students.csv"
-course_file = "courses.csv"
-feedback_file = "feedback.csv"
-news_file = "news.csv"
-users_file = "users.csv"
+# -------------------- FILE PATHS --------------------
+USERS_FILE = "users.csv"
+STUDENTS_FILE = "students.csv"
+COURSES_FILE = "courses.csv"
+FEEDBACK_FILE = "feedback.csv"
+NEWS_FILE = "news.csv"
 
-# -------------------- INITIAL SETUP --------------------
-for file in [student_file, course_file, feedback_file, news_file, users_file]:
-    if not os.path.exists(file):
-        if "student" in file:
-            pd.DataFrame(columns=["Name", "Roll No", "Semester", "Email"]).to_csv(file, index=False)
-        elif "course" in file:
-            pd.DataFrame(columns=["Course Name", "Code", "Instructor"]).to_csv(file, index=False)
-        elif "feedback" in file:
-            pd.DataFrame(columns=["Name", "Message", "Rating"]).to_csv(file, index=False)
-        elif "news" in file:
-            pd.DataFrame(columns=["Title", "Details"]).to_csv(file, index=False)
-        elif "users" in file:
-            pd.DataFrame([
-                ["admin", "1234", "Admin"],
-                ["student", "1234", "Student"]
-            ], columns=["Username", "Password", "Role"]).to_csv(file, index=False)
+# -------------------- HELPERS --------------------
+def ensure_csv(path, columns):
+    if not os.path.exists(path):
+        pd.DataFrame(columns=columns).to_csv(path, index=False)
 
-# -------------------- PAGE SETUP --------------------
-st.set_page_config(page_title="AI Department Portal", layout="wide")
+def hash_password(password: str) -> str:
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+
+def load_users() -> pd.DataFrame:
+    ensure_csv(USERS_FILE, ["username","display_name","password_hash","role","email","created_at"])
+    return pd.read_csv(USERS_FILE)
+
+def save_users(df: pd.DataFrame):
+    df.to_csv(USERS_FILE, index=False)
+
+def user_exists(username: str) -> bool:
+    df = load_users()
+    return username in df['username'].astype(str).values
+
+def create_user(username: str, display_name: str, password: str, role: str, email: str = ""):
+    df = load_users()
+    pw_hash = hash_password(password)
+    now = datetime.utcnow().isoformat()
+    new = pd.DataFrame([[username, display_name, pw_hash, role, email, now]], columns=df.columns)
+    df = pd.concat([df, new], ignore_index=True)
+    save_users(df)
+
+def verify_user(username: str, password: str):
+    df = load_users()
+    row = df[df['username'].astype(str) == str(username)]
+    if row.empty:
+        return None
+    if row.iloc[0]['password_hash'] == hash_password(password):
+        return {
+            "username": row.iloc[0]['username'],
+            "display_name": row.iloc[0]['display_name'],
+            "role": row.iloc[0]['role'],
+            "email": row.iloc[0].get('email', "")
+        }
+    return None
+
+# -------------------- ENSURE DATA FILES --------------------
+ensure_csv(USERS_FILE, ["username","display_name","password_hash","role","email","created_at"])
+ensure_csv(STUDENTS_FILE, ["Name","Roll No","Semester","Email"])
+ensure_csv(COURSES_FILE, ["Course Name","Code","Instructor"])
+ensure_csv(FEEDBACK_FILE, ["username","name","message","rating","created_at"])
+ensure_csv(NEWS_FILE, ["title","details","created_at"])
+
+# -------------------- PAGE STYLING --------------------
+st.set_page_config(page_title="AI Dept Portal (Superior)", page_icon="💜", layout="wide")
 st.markdown("""
     <style>
-    body { background-color: #f8f5ff; }
-    .stApp { background-color: #f3eaff; }
-    .main-title {
-        text-align: center;
-        color: #6A0DAD;
-        font-size: 38px;
-        font-weight: 700;
-    }
-    .section-title {
-        color: #6A0DAD;
-        font-size: 24px;
-        font-weight: bold;
-        margin-top: 10px;
-    }
+        .stApp { background: #fbf8ff; }
+        .main-title { text-align:center; color:#5e17eb; font-size:34px; font-weight:700; padding:12px 0; }
+        .card { background: #fff; border-radius:14px; padding:18px; box-shadow: 0 6px 18px rgba(94,23,235,0.06); margin-bottom:18px; }
+        .stButton>button { background-color: #5e17eb; color: white; border-radius:10px; padding:8px 18px; border:none; }
+        .stButton>button:hover { background-color:#7b3ff6; color:white; }
+        .sidebar .sidebar-content { background: linear-gradient(180deg,#f3e9ff,#efe6ff); }
+        .small-muted { color: #6b6b6b; font-size:12px; }
     </style>
 """, unsafe_allow_html=True)
 
-st.markdown("<div class='main-title'>🎓 Superior University - AI Department Portal</div>", unsafe_allow_html=True)
+st.markdown("<div class='main-title'>💜 Superior University — AI Department Portal</div>", unsafe_allow_html=True)
 
-# -------------------- LOGIN SYSTEM --------------------
-st.sidebar.title("🔐 Login Panel")
-username = st.sidebar.text_input("Username")
-password = st.sidebar.text_input("Password", type="password")
+# -------------------- AUTH STATE --------------------
+if 'auth' not in st.session_state:
+    st.session_state.auth = {"logged_in": False, "username": None, "display_name": None, "role": None}
 
-users = pd.read_csv(users_file)
+def logout():
+    st.session_state.auth = {"logged_in": False, "username": None, "display_name": None, "role": None}
+    st.experimental_rerun()
 
-if st.sidebar.button("Login"):
-    user = users[(users["Username"] == username) & (users["Password"] == password)]
-    if not user.empty:
-        role = user.iloc[0]["Role"]
-        st.session_state["logged_in"] = True
-        st.session_state["username"] = username
-        st.session_state["role"] = role
-        st.sidebar.success(f"✅ Logged in as {role}")
+# -------------------- SIDEBAR: LOGIN & SIGNUP --------------------
+st.sidebar.header("Account")
+
+if not st.session_state.auth["logged_in"]:
+    tab = st.sidebar.radio("Action", ("Login","Sign up"))
+    if tab == "Login":
+        li_user = st.sidebar.text_input("Username", key="li_user")
+        li_pw = st.sidebar.text_input("Password", type="password", key="li_pw")
+        if st.sidebar.button("Login"):
+            result = verify_user(li_user.strip(), li_pw)
+            if result:
+                st.session_state.auth = {"logged_in": True, "username": result['username'], "display_name": result['display_name'], "role": result['role']}
+                st.sidebar.success(f"Logged in: {result['display_name']} ({result['role']})")
+                st.experimental_rerun()
+            else:
+                st.sidebar.error("Invalid username or password.")
+    else:  # Sign up
+        st.sidebar.subheader("Create an account")
+        su_name = st.sidebar.text_input("Full name", key="su_name")
+        su_username = st.sidebar.text_input("Choose username", key="su_username")
+        su_email = st.sidebar.text_input("Email (optional)", key="su_email")
+        su_role = st.sidebar.selectbox("Role (select)", ["Student","Admin"], key="su_role")
+        su_pw = st.sidebar.text_input("Password", type="password", key="su_pw")
+        su_pw2 = st.sidebar.text_input("Confirm password", type="password", key="su_pw2")
+        if st.sidebar.button("Sign up"):
+            if not (su_name and su_username and su_pw and su_pw2):
+                st.sidebar.warning("Please fill required fields.")
+            elif su_pw != su_pw2:
+                st.sidebar.warning("Passwords do not match.")
+            elif user_exists(su_username.strip()):
+                st.sidebar.warning("Username already exists. Choose another.")
+            else:
+                create_user(su_username.strip(), su_name.strip(), su_pw.strip(), su_role.strip(), su_email.strip())
+                st.sidebar.success("Account created! Now login.")
+else:
+    st.sidebar.success(f"{st.session_state.auth['display_name']} ({st.session_state.auth['role']})")
+    if st.sidebar.button("Logout"):
+        logout()
+
+# -------------------- PUBLIC VIEW IF NOT LOGGED IN --------------------
+if not st.session_state.auth["logged_in"]:
+    st.info("Please Sign up or Login from the sidebar to continue.")
+    st.subheader("Latest Announcements")
+    news = pd.read_csv(NEWS_FILE)
+    if not news.empty:
+        for _, r in news.sort_values("created_at", ascending=False).head(5).iterrows():
+            st.markdown(f"**{r['title']}**")
+            st.write(r['details'])
+            st.caption(r['created_at'])
+            st.write("---")
     else:
-        st.sidebar.error("❌ Invalid username or password")
-
-if "logged_in" not in st.session_state or not st.session_state["logged_in"]:
-    st.warning("🔒 Please log in from the sidebar to continue.")
+        st.write("No announcements yet.")
     st.stop()
 
-# -------------------- MENU BASED ON ROLE --------------------
-if st.session_state["role"] == "Admin":
-    menu = st.sidebar.radio(
-        "Admin Menu",
-        ["🏠 Home", "👨‍🎓 Add Student", "📘 Add Course", "📰 Add News", "📊 View Data"]
-    )
+# -------------------- AFTER LOGIN: ROLE-BASED UI --------------------
+user = st.session_state.auth
+st.sidebar.markdown("---")
+st.sidebar.write("Logged in as:")
+st.sidebar.write(f"**{user['display_name']}**")
+st.sidebar.write(f"Role: `{user['role']}`")
+st.sidebar.markdown("---")
 
+if user['role'].lower() == 'admin':
+    page = st.sidebar.selectbox("Admin Menu", ["Dashboard","Manage Students","Manage Courses","News","Feedback","Users"])
 else:
-    menu = st.sidebar.radio(
-        "Student Menu",
-        ["🏠 Home", "📝 Feedback", "📰 View News"]
-    )
+    page = st.sidebar.selectbox("Student Menu", ["Home","My Profile","Courses","Submit Feedback","Announcements"])
 
-# -------------------- HOME --------------------
-if menu == "🏠 Home":
-    st.markdown("<div class='section-title'>Welcome!</div>", unsafe_allow_html=True)
-    if st.session_state["role"] == "Admin":
-        st.write("Hello Admin! Manage your department data efficiently.")
-    else:
-        st.write("Welcome Student! Check news or share your feedback.")
-    st.image("https://img.freepik.com/free-vector/artificial-intelligence-illustration_23-2149232800.jpg", use_container_width=True)
-
-# -------------------- ADD STUDENT --------------------
-if menu == "👨‍🎓 Add Student" and st.session_state["role"] == "Admin":
-    st.markdown("<div class='section-title'>Add New Student</div>", unsafe_allow_html=True)
-    name = st.text_input("Name")
-    roll = st.text_input("Roll No")
-    sem = st.selectbox("Semester", ["1st", "3rd"])
-    email = st.text_input("Email")
-
-    if st.button("Add Student"):
-        if name and roll and email:
-            df = pd.read_csv(student_file)
-            df.loc[len(df)] = [name, roll, sem, email]
-            df.to_csv(student_file, index=False)
-            st.success("✅ Student added successfully!")
+# -------------------- ADMIN PAGES --------------------
+if user['role'].lower() == 'admin':
+    if page == "Dashboard":
+        st.header("📊 Admin Dashboard")
+        students = pd.read_csv(STUDENTS_FILE)
+        courses = pd.read_csv(COURSES_FILE)
+        feedback = pd.read_csv(FEEDBACK_FILE)
+        st.metric("Students", len(students))
+        st.metric("Courses", len(courses))
+        st.metric("Feedbacks", len(feedback))
+        st.subheader("Recent Feedback")
+        if not feedback.empty:
+            st.dataframe(feedback.sort_values("created_at", ascending=False).head(10))
         else:
-            st.warning("⚠️ Please fill all fields!")
+            st.write("No feedback yet.")
 
-# -------------------- ADD COURSE --------------------
-if menu == "📘 Add Course" and st.session_state["role"] == "Admin":
-    st.markdown("<div class='section-title'>Add New Course</div>", unsafe_allow_html=True)
-    cname = st.text_input("Course Name")
-    ccode = st.text_input("Course Code")
-    instructor = st.text_input("Instructor")
+    elif page == "Manage Students":
+        st.header("👥 Manage Students")
+        with st.expander("Add New Student"):
+            s_name = st.text_input("Name", key="add_name")
+            s_roll = st.text_input("Roll No", key="add_roll")
+            s_sem = st.selectbox("Semester", ["1st","3rd"], key="add_sem")
+            s_email = st.text_input("Email", key="add_stu_email")
+            if st.button("Add Student", key="add_student_btn"):
+                if s_name and s_roll:
+                    df = pd.read_csv(STUDENTS_FILE)
+                    if str(s_roll) in df['Roll No'].astype(str).values:
+                        st.warning("Roll already exists.")
+                    else:
+                        new = pd.DataFrame([[s_name, s_roll, s_sem, s_email]], columns=df.columns)
+                        df = pd.concat([df, new], ignore_index=True)
+                        df.to_csv(STUDENTS_FILE, index=False)
+                        st.success("Student added.")
+                else:
+                    st.warning("Provide name and roll.")
 
-    if st.button("Add Course"):
-        if cname and ccode and instructor:
-            df = pd.read_csv(course_file)
-            df.loc[len(df)] = [cname, ccode, instructor]
-            df.to_csv(course_file, index=False)
-            st.success("✅ Course added successfully!")
+        st.subheader("All Students")
+        st.dataframe(pd.read_csv(STUDENTS_FILE))
+
+        with st.expander("Delete Student"):
+            df = pd.read_csv(STUDENTS_FILE)
+            if not df.empty:
+                sel = st.selectbox("Select Roll to delete", df['Roll No'].astype(str).tolist(), key="del_student_sel")
+                if st.button("Delete Student"):
+                    df = df[df['Roll No'].astype(str) != sel]
+                    df.to_csv(STUDENTS_FILE, index=False)
+                    st.success("Deleted.")
+            else:
+                st.info("No students to delete.")
+
+    elif page == "Manage Courses":
+        st.header("📚 Manage Courses")
+        with st.expander("Add Course"):
+            c_name = st.text_input("Course Name", key="c_name")
+            c_code = st.text_input("Course Code", key="c_code")
+            c_instr = st.text_input("Instructor", key="c_instr")
+            if st.button("Add Course", key="add_course_btn"):
+                if c_name and c_code:
+                    df = pd.read_csv(COURSES_FILE)
+                    if str(c_code) in df['Code'].astype(str).values:
+                        st.warning("Course code exists.")
+                    else:
+                        new = pd.DataFrame([[c_name, c_code, c_instr]], columns=df.columns)
+                        df = pd.concat([df, new], ignore_index=True)
+                        df.to_csv(COURSES_FILE, index=False)
+                        st.success("Course added.")
+                else:
+                    st.warning("Provide course name and code.")
+        st.subheader("All Courses")
+        st.dataframe(pd.read_csv(COURSES_FILE))
+        with st.expander("Delete Course"):
+            df = pd.read_csv(COURSES_FILE)
+            if not df.empty:
+                sel = st.selectbox("Select Course Code to delete", df['Code'].astype(str).tolist(), key="del_course_sel")
+                if st.button("Delete Course"):
+                    df = df[df['Code'].astype(str) != sel]
+                    df.to_csv(COURSES_FILE, index=False)
+                    st.success("Deleted.")
+            else:
+                st.info("No courses to delete.")
+
+    elif page == "News":
+        st.header("📰 Manage News / Announcements")
+        n_title = st.text_input("Title", key="news_title")
+        n_details = st.text_area("Details", key="news_details")
+        if st.button("Publish News"):
+            if n_title and n_details:
+                df = pd.read_csv(NEWS_FILE)
+                now = datetime.utcnow().isoformat()
+                new = pd.DataFrame([[n_title, n_details, now]], columns=df.columns)
+                df = pd.concat([df, new], ignore_index=True)
+                df.to_csv(NEWS_FILE, index=False)
+                st.success("Published.")
+            else:
+                st.warning("Provide title and details.")
+        st.subheader("All News")
+        st.dataframe(pd.read_csv(NEWS_FILE).sort_values("created_at", ascending=False))
+
+    elif page == "Feedback":
+        st.header("💬 Student Feedback")
+        df = pd.read_csv(FEEDBACK_FILE)
+        if df.empty:
+            st.write("No feedback yet.")
         else:
-            st.warning("⚠️ Please fill all fields!")
+            st.dataframe(df.sort_values("created_at", ascending=False))
+            csv = df.to_csv(index=False).encode('utf-8')
+            st.download_button("Download feedback CSV", csv, "feedback.csv")
 
-# -------------------- ADD NEWS --------------------
-if menu == "📰 Add News" and st.session_state["role"] == "Admin":
-    st.markdown("<div class='section-title'>Post News / Announcement</div>", unsafe_allow_html=True)
-    ntitle = st.text_input("News Title")
-    ndetail = st.text_area("News Details")
+    elif page == "Users":
+        st.header("🔐 Users")
+        users = load_users()
+        st.dataframe(users[['username','display_name','role','email','created_at']])
+        with st.expander("Create user manually"):
+            u_name = st.text_input("Username", key="manual_u")
+            u_display = st.text_input("Display name", key="manual_dn")
+            u_email = st.text_input("Email", key="manual_email")
+            u_role = st.selectbox("Role", ["Student","Admin"], key="manual_role")
+            u_pw = st.text_input("Password", type="password", key="manual_pw")
+            if st.button("Create User"):
+                if not (u_name and u_display and u_pw):
+                    st.warning("Fill required fields.")
+                elif user_exists(u_name.strip()):
+                    st.warning("Username exists.")
+                else:
+                    create_user(u_name.strip(), u_display.strip(), u_pw.strip(), u_role.strip(), u_email.strip())
+                    st.success("User created.")
 
-    if st.button("Post News"):
-        if ntitle and ndetail:
-            df = pd.read_csv(news_file)
-            df.loc[len(df)] = [ntitle, ndetail]
-            df.to_csv(news_file, index=False)
-            st.success("🗞️ News added successfully!")
+# -------------------- STUDENT PAGES --------------------
+else:
+    if page == "Home":
+        st.header("Welcome Student")
+        st.write("Use the menu to view courses, submit feedback, or read announcements.")
+    elif page == "My Profile":
+        st.header("🧾 My Profile")
+        users = load_users()
+        row = users[users['username'].astype(str) == user['username']]
+        if not row.empty:
+            r = row.iloc[0]
+            st.write(f"**Username:** {r['username']}")
+            st.write(f"**Name:** {r['display_name']}")
+            st.write(f"**Role:** {r['role']}")
+            if r.get('email', ""):
+                st.write(f"**Email:** {r['email']}")
+            st.write(f"**Joined:** {r['created_at']}")
         else:
-            st.warning("⚠️ Please fill both fields!")
-
-# -------------------- VIEW DATA --------------------
-if menu == "📊 View Data" and st.session_state["role"] == "Admin":
-    st.markdown("<div class='section-title'>View Department Data</div>", unsafe_allow_html=True)
-    data_type = st.selectbox("Choose Data", ["Students", "Courses", "Feedback", "News"])
-    if data_type == "Students":
-        st.dataframe(pd.read_csv(student_file))
-    elif data_type == "Courses":
-        st.dataframe(pd.read_csv(course_file))
-    elif data_type == "Feedback":
-        st.dataframe(pd.read_csv(feedback_file))
-    elif data_type == "News":
-        st.dataframe(pd.read_csv(news_file))
-
-# -------------------- STUDENT FEEDBACK --------------------
-if menu == "📝 Feedback" and st.session_state["role"] == "Student":
-    st.markdown("<div class='section-title'>Submit Your Feedback</div>", unsafe_allow_html=True)
-    name = st.text_input("Your Name")
-    msg = st.text_area("Your Feedback")
-    rating = st.slider("Rating (1-5)", 1, 5)
-    if st.button("Submit"):
-        if name and msg:
-            df = pd.read_csv(feedback_file)
-            df.loc[len(df)] = [name, msg, rating]
-            df.to_csv(feedback_file, index=False)
-            st.success("✅ Feedback submitted successfully!")
+            st.info("Profile not found.")
+    elif page == "Courses":
+        st.header("📘 Available Courses")
+        df = pd.read_csv(COURSES_FILE)
+        if df.empty:
+            st.info("No courses added yet.")
         else:
-            st.warning("⚠️ Please fill all fields!")
+            st.dataframe(df)
+    elif page == "Submit Feedback":
+        st.header("✉️ Submit Feedback")
+        name = st.text_input("Your name", value=user['display_name'], key="fb_name")
+        message = st.text_area("Message", key="fb_msg")
+        rating = st.slider("Rating (1-5)", 1, 5, key="fb_rating")
+        if st.button("Submit Feedback"):
+            if name and message:
+                df = pd.read_csv(FEEDBACK_FILE)
+                now = datetime.utcnow().isoformat()
+                new = pd.DataFrame([[user['username'], name, message, rating, now]], columns=df.columns)
+                df = pd.concat([df, new], ignore_index=True)
+                df.to_csv(FEEDBACK_FILE, index=False)
+                st.success("Thank you — feedback submitted.")
+            else:
+                st.warning("Please fill name and message.")
+    elif page == "Announcements":
+        st.header("📰 Announcements")
+        df = pd.read_csv(NEWS_FILE)
+        if df.empty:
+            st.info("No announcements yet.")
+        else:
+            for _, r in df.sort_values("created_at", ascending=False).iterrows():
+                st.markdown(f"**{r['title']}**")
+                st.write(r['details'])
+                st.caption(r['created_at'])
+                st.write("---")
 
-# -------------------- STUDENT VIEW NEWS --------------------
-if menu == "📰 View News" and st.session_state["role"] == "Student":
-    st.markdown("<div class='section-title'>Latest News & Announcements</div>", unsafe_allow_html=True)
-    df = pd.read_csv(news_file)
-    if len(df) == 0:
-        st.info("No news available yet.")
-    else:
-        for i, row in df.iterrows():
-            st.markdown(f"### 🗞️ {row['Title']}")
-            st.write(row['Details'])
-            st.write("---")
+# -------------------- FOOTER --------------------
+st.markdown("---")
+st.caption("AI Department Portal • Purple Superior theme • Single-file app (app.py).")
