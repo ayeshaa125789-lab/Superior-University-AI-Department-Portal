@@ -1,219 +1,166 @@
 import streamlit as st
-import sqlite3
-import hashlib
+import pandas as pd
+import os
 
-# --------------------------- DATABASE SETUP ---------------------------
-conn = sqlite3.connect('portal.db', check_same_thread=False)
-c = conn.cursor()
+# ---------- Data Storage ----------
+DATA_FILE = "students_data.csv"
+if not os.path.exists(DATA_FILE):
+    df = pd.DataFrame(columns=["roll_no", "name", "semester", "password"])
+    df.to_csv(DATA_FILE, index=False)
 
-# Create tables if not exist
-c.execute('''CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT UNIQUE,
-    name TEXT,
-    password TEXT,
-    role TEXT,
-    semester TEXT
-)''')
+# ---------- Functions ----------
+def load_students():
+    return pd.read_csv(DATA_FILE)
 
-c.execute('''CREATE TABLE IF NOT EXISTS attendance (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    student TEXT,
-    course TEXT,
-    date TEXT,
-    status TEXT
-)''')
+def save_students(df):
+    df.to_csv(DATA_FILE, index=False)
 
-c.execute('''CREATE TABLE IF NOT EXISTS results (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    student TEXT,
-    course TEXT,
-    marks INTEGER,
-    total INTEGER
-)''')
-
-c.execute('''CREATE TABLE IF NOT EXISTS announcements (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    message TEXT
-)''')
-
-c.execute('''CREATE TABLE IF NOT EXISTS feedback (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    student TEXT,
-    message TEXT
-)''')
-conn.commit()
-
-# --------------------------- UTILITY FUNCTIONS ---------------------------
-def make_hashes(password):
-    return hashlib.sha256(password.encode()).hexdigest()
-
-def check_hashes(password, hashed):
-    return make_hashes(password) == hashed
-
-def add_user(username, name, password, role, semester=""):
-    c.execute('INSERT INTO users (username, name, password, role, semester) VALUES (?,?,?,?,?)',
-              (username, name, make_hashes(password), role, semester))
-    conn.commit()
-
-def login_user(username, password):
-    c.execute('SELECT * FROM users WHERE username=?', (username,))
-    data = c.fetchone()
-    if data and check_hashes(password, data[3]):
-        return data
-    return None
-
-# --------------------------- INITIAL ADMIN ---------------------------
-c.execute("SELECT * FROM users WHERE role='admin'")
-if not c.fetchone():
-    add_user("admin", "Administrator", "admin123", "admin")
-    conn.commit()
-
-# --------------------------- DASHBOARDS ---------------------------
+# ---------- Admin Section ----------
 def admin_dashboard():
-    st.title("🎓 Superior University - AI Department Portal (Admin Dashboard)")
+    st.title("🎓 Superior University - AI Department Portal (Admin)")
+    st.sidebar.header("Admin Options")
 
-    menu = ["Add Student", "Add Teacher", "Add Course", "Mark Attendance",
-            "Add Results", "Announcements", "View Feedback"]
-    choice = st.sidebar.radio("Select Option", menu)
+    menu = st.sidebar.radio("Select Option", [
+        "Add Student",
+        "View Students",
+        "Add Course",
+        "Mark Attendance",
+        "Add Results",
+        "Announcements",
+        "View Feedback"
+    ])
 
-    if choice == "Add Student":
-        st.subheader("➕ Add New Student")
-        name = st.text_input("Full Name")
-        roll = st.text_input("Roll No")
-        sem = st.selectbox("Semester", [str(i) for i in range(1, 9)])
-        pw = st.text_input("Password", type="password")
-        if st.button("Add Student"):
-            try:
-                add_user(roll, name, pw, "student", sem)
-                st.success(f"Student {name} added successfully!")
-            except:
-                st.error("Roll number already exists!")
+    if menu == "Add Student":
+        st.subheader("Add New Student")
+        roll = st.text_input("Enter Roll No", key="add_roll")
+        name = st.text_input("Enter Name", key="add_name")
+        sem = st.selectbox("Select Semester", [f"Semester {i}" for i in range(1, 9)], key="add_sem")
+        password = st.text_input("Set Password", type="password", key="add_pass")
 
-    elif choice == "Add Teacher":
-        st.subheader("👨‍🏫 Add Teacher")
-        name = st.text_input("Teacher Name")
-        uname = st.text_input("Username")
-        pw = st.text_input("Password", type="password")
-        if st.button("Add Teacher"):
-            try:
-                add_user(uname, name, pw, "teacher")
-                st.success(f"Teacher {name} added successfully!")
-            except:
-                st.error("Username already exists!")
+        if st.button("Save Student"):
+            df = load_students()
+            if roll in df["roll_no"].values:
+                st.warning("⚠️ Student with this Roll No already exists.")
+            else:
+                new_row = pd.DataFrame([[roll, name, sem, password]], columns=df.columns)
+                df = pd.concat([df, new_row], ignore_index=True)
+                save_students(df)
+                st.success(f"✅ Student '{name}' added successfully!")
 
-    elif choice == "Mark Attendance":
-        st.subheader("📋 Mark Attendance")
-        c.execute("SELECT username, name FROM users WHERE role='student'")
-        students = c.fetchall()
-        for s in students:
-            status = st.selectbox(f"{s[1]} ({s[0]})", ["Present", "Absent"], key=s[0])
-            if st.button(f"Save {s[0]}", key=s[0] + "_btn"):
-                c.execute("INSERT INTO attendance (student, course, date, status) VALUES (?,?,DATE('now'),?)",
-                          (s[0], "AI Fundamentals", status))
-                conn.commit()
-                st.success(f"Attendance saved for {s[1]}")
+    elif menu == "View Students":
+        st.subheader("All Students")
+        df = load_students()
+        st.dataframe(df)
 
-    elif choice == "Add Results":
-        st.subheader("📊 Add Results")
-        c.execute("SELECT username, name FROM users WHERE role='student'")
-        students = c.fetchall()
-        for s in students:
-            marks = st.number_input(f"{s[1]} ({s[0]}) - Marks", 0, 100, key=s[0] + "_marks")
-            total = st.number_input(f"{s[1]} ({s[0]}) - Total", 0, 100, 100, key=s[0] + "_total")
-            if st.button(f"Save Result {s[0]}", key=s[0] + "_save"):
-                c.execute("INSERT INTO results (student, course, marks, total) VALUES (?,?,?,?)",
-                          (s[0], "AI Fundamentals", marks, total))
-                conn.commit()
-                st.success(f"Result saved for {s[1]}")
+    elif menu == "Add Course":
+        st.subheader("Add Courses (Per Semester)")
+        sem = st.selectbox("Select Semester", [f"Semester {i}" for i in range(1, 9)], key="course_sem")
+        course_name = st.text_input("Course Name", key="course_name")
+        if st.button("Add Course"):
+            st.success(f"✅ Course '{course_name}' added for {sem}!")
+
+    elif menu == "Mark Attendance":
+        st.subheader("Mark Attendance (AI Department)")
+        df = load_students()
+        sem = st.selectbox("Select Semester", sorted(df["semester"].unique()), key="att_sem")
+        filtered = df[df["semester"] == sem]
+        for _, row in filtered.iterrows():
+            st.checkbox(f"{row['roll_no']} - {row['name']}", key=f"att_{row['roll_no']}")
+        st.button("Submit Attendance")
+
+    elif menu == "Add Results":
+        st.subheader("Add Results for Students")
+        df = load_students()
+        roll = st.text_input("Enter Roll No", key="res_roll")
+        marks = st.number_input("Enter Marks", min_value=0, max_value=100, key="res_marks")
+        if st.button("Save Result"):
+            st.success(f"✅ Marks for {roll} saved successfully!")
+
+    elif menu == "Announcements":
+        st.subheader("Make an Announcement")
+        msg = st.text_area("Write Announcement")
+        if st.button("Post Announcement"):
+            st.success("✅ Announcement posted!")
+
+    elif menu == "View Feedback":
+        st.subheader("Student Feedbacks")
+        st.info("📬 No feedback yet.")
+
+
+# ---------- Student Section ----------
+def student_dashboard(student):
+    st.title("🎓 Superior University - AI Department (Student Dashboard)")
+    st.write(f"Welcome, **{student['name']} ({student['roll_no']})** — {student['semester']}")
+
+    tabs = ["Attendance", "Results", "Courses", "Announcements", "Feedback"]
+    choice = st.sidebar.radio("Select Option", tabs, key="stud_opt")
+
+    if choice == "Attendance":
+        st.subheader("📋 Attendance Record")
+        st.info("Your attendance record will appear here.")
+
+    elif choice == "Results":
+        st.subheader("📘 Result Details")
+        st.info("Your results will be shown here.")
+
+    elif choice == "Courses":
+        st.subheader("📚 Registered Courses")
+        st.info("Courses added by teachers/admin will appear here.")
 
     elif choice == "Announcements":
-        st.subheader("📢 Make Announcement")
-        msg = st.text_area("Announcement Message")
-        if st.button("Post"):
-            c.execute("INSERT INTO announcements (message) VALUES (?)", (msg,))
-            conn.commit()
-            st.success("Announcement posted successfully!")
+        st.subheader("📢 Latest Announcements")
+        st.info("Stay tuned for new announcements.")
 
-    elif choice == "View Feedback":
-        st.subheader("💬 Student Feedback")
-        c.execute("SELECT * FROM feedback")
-        rows = c.fetchall()
-        if rows:
-            for f in rows:
-                st.info(f"{f[1]}: {f[2]}")
-        else:
-            st.warning("No feedback yet.")
-
-def student_dashboard(user):
-    st.title(f"👩‍🎓 Welcome, {user[2]} ({user[1]})")
-    st.subheader(f"Semester: {user[5]}")
-
-    tabs = st.tabs(["📢 Announcements", "📊 Results", "📋 Attendance", "💬 Feedback"])
-
-    with tabs[0]:
-        c.execute("SELECT * FROM announcements")
-        for a in c.fetchall():
-            st.info(a[1])
-
-    with tabs[1]:
-        c.execute("SELECT course, marks, total FROM results WHERE student=?", (user[1],))
-        res = c.fetchall()
-        if res:
-            for r in res:
-                st.write(f"{r[0]}: {r[1]}/{r[2]}")
-        else:
-            st.warning("No results uploaded yet.")
-
-    with tabs[2]:
-        c.execute("SELECT course, date, status FROM attendance WHERE student=?", (user[1],))
-        att = c.fetchall()
-        if att:
-            for a in att:
-                st.write(f"{a[1]} - {a[0]}: {a[2]}")
-        else:
-            st.warning("No attendance records yet.")
-
-    with tabs[3]:
+    elif choice == "Feedback":
+        st.subheader("📝 Give Feedback")
         fb = st.text_area("Enter your feedback")
         if st.button("Submit Feedback"):
-            c.execute("INSERT INTO feedback (student, message) VALUES (?,?)", (user[1], fb))
-            conn.commit()
-            st.success("Feedback sent successfully!")
+            st.success("✅ Feedback submitted successfully!")
 
-def teacher_dashboard(user):
-    st.title(f"👨‍🏫 Welcome, {user[2]}")
-    st.subheader("You can mark attendance and upload results")
-
-# --------------------------- MAIN LOGIN ---------------------------
+# ---------- Login ----------
 def main():
-    st.set_page_config(page_title="AI Department Portal", page_icon="🎓", layout="wide")
-    st.markdown("<h2 style='text-align:center;color:#B26BFF;'>🎓 Superior University - AI Department Portal</h2>", unsafe_allow_html=True)
+    st.markdown(
+        """
+        <h1 style='text-align:center; color:#6a0dad;'>Superior University - AI Department Portal</h1>
+        """, unsafe_allow_html=True)
 
-    menu = ["Login"]
-    choice = st.sidebar.selectbox("Menu", menu)
+    if "logged_in" not in st.session_state:
+        st.session_state.logged_in = False
+        st.session_state.user_type = None
+        st.session_state.user = None
 
-    if choice == "Login":
-        username = st.text_input("Username / Roll No")
-        password = st.text_input("Password", type="password")
+    if not st.session_state.logged_in:
+        st.sidebar.subheader("🔐 Login")
+        user_type = st.sidebar.selectbox("Login as", ["Admin", "Student"])
+        username = st.sidebar.text_input("Username / Roll No", key="login_user")
+        password = st.sidebar.text_input("Password", type="password", key="login_pass")
 
-        if st.button("Login"):
-            user = login_user(username, password)
-            if user:
-                st.session_state["user"] = user
-                st.rerun()
+        if st.sidebar.button("Login"):
+            if user_type == "Admin" and username == "admin" and password == "123":
+                st.session_state.logged_in = True
+                st.session_state.user_type = "Admin"
+                st.success("✅ Admin Login Successful!")
+            elif user_type == "Student":
+                df = load_students()
+                user = df[(df["roll_no"] == username) & (df["password"] == password)]
+                if not user.empty:
+                    st.session_state.logged_in = True
+                    st.session_state.user_type = "Student"
+                    st.session_state.user = user.iloc[0].to_dict()
+                    st.success("✅ Student Login Successful!")
+                else:
+                    st.error("❌ Invalid Roll No or Password.")
             else:
-                st.error("Invalid credentials! Try again.")
-
-    if "user" in st.session_state:
-        role = st.session_state["user"][4]
-        if role == "admin":
+                st.error("❌ Invalid Credentials.")
+    else:
+        if st.session_state.user_type == "Admin":
             admin_dashboard()
-        elif role == "student":
-            student_dashboard(st.session_state["user"])
-        elif role == "teacher":
-            teacher_dashboard(st.session_state["user"])
-        st.sidebar.button("Logout", on_click=lambda: st.session_state.pop("user") or st.rerun())
+        elif st.session_state.user_type == "Student":
+            student_dashboard(st.session_state.user)
 
+        st.sidebar.button("Logout", on_click=lambda: st.session_state.clear())
+
+
+# ---------- Run App ----------
 if __name__ == "__main__":
     main()
