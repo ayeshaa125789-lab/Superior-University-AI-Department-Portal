@@ -2,133 +2,202 @@ import streamlit as st
 import pandas as pd
 import os
 
-# --- SETTINGS ---
-st.set_page_config(page_title="Superior University AI Department", layout="wide")
-
-# --- COLORS ---
-PRIMARY_COLOR = "#4B0082"  # purple
-BG_COLOR = "#000000"       # black
-st.markdown(f"""
-    <style>
-    .main {{ background-color: {BG_COLOR}; color: white; }}
-    .stButton>button {{ background-color: {PRIMARY_COLOR}; color: white; }}
-    .stTextInput>div>div>input {{ background-color: #1c1c1c; color: white; }}
-    </style>
-""", unsafe_allow_html=True)
-
-# --- DATA FILES ---
-USERS_FILE = "users.csv"      # stores admin & student data
+# --- CSV Files ---
+USER_FILE = "users.csv"
+COURSE_FILE = "courses.csv"
+ATTENDANCE_FILE = "attendance.csv"
 RESULTS_FILE = "results.csv"
-ATTEND_FILE = "attendance.csv"
 
-# --- UTILITY FUNCTIONS ---
-def load_data(file, cols):
-    if os.path.exists(file):
-        return pd.read_csv(file)
+# --- Initialize CSVs if they don't exist ---
+def init_csv():
+    if not os.path.exists(USER_FILE):
+        users = pd.DataFrame(columns=["username","roll_no","password","role","semester"])
+        users = users.append({"username":"admin","roll_no":"","password":"123","role":"admin","semester":""}, ignore_index=True)
+        users.to_csv(USER_FILE,index=False)
+
+    if not os.path.exists(COURSE_FILE):
+        courses = pd.DataFrame(columns=["course_name","semester"])
+        courses.to_csv(COURSE_FILE,index=False)
+
+    if not os.path.exists(ATTENDANCE_FILE):
+        attendance = pd.DataFrame(columns=["student_username","course_name","attended","total"])
+        attendance.to_csv(ATTENDANCE_FILE,index=False)
+
+    if not os.path.exists(RESULTS_FILE):
+        results = pd.DataFrame(columns=["student_username","course_name","marks"])
+        results.to_csv(RESULTS_FILE,index=False)
+
+# --- Load CSVs ---
+def load_users():
+    return pd.read_csv(USER_FILE)
+
+def load_courses():
+    return pd.read_csv(COURSE_FILE)
+
+def load_attendance():
+    return pd.read_csv(ATTENDANCE_FILE)
+
+def load_results():
+    return pd.read_csv(RESULTS_FILE)
+
+# --- Save CSVs ---
+def save_users(df):
+    df.to_csv(USER_FILE,index=False)
+
+def save_courses(df):
+    df.to_csv(COURSE_FILE,index=False)
+
+def save_attendance(df):
+    df.to_csv(ATTENDANCE_FILE,index=False)
+
+def save_results(df):
+    df.to_csv(RESULTS_FILE,index=False)
+
+# --- Admin Dashboard ---
+def admin_dashboard(username):
+    st.markdown("<h2 style='color:purple;'>Admin Dashboard</h2>", unsafe_allow_html=True)
+    menu = ["Add Student","View Students","Add Course","View Courses","Mark Attendance","Add Results","View Results","Announcements","View Feedback"]
+    choice = st.sidebar.selectbox("Select Option", menu)
+
+    users = load_users()
+    courses = load_courses()
+    attendance = load_attendance()
+    results = load_results()
+
+    if choice == "Add Student":
+        st.subheader("Add Student")
+        with st.form("add_student", clear_on_submit=True):
+            uname = st.text_input("Username")
+            roll = st.text_input("Roll Number")
+            pwd = st.text_input("Password", type="password")
+            sem = st.selectbox("Semester", list(range(1,9)))
+            submitted = st.form_submit_button("Add Student")
+            if submitted:
+                if uname in users["username"].values:
+                    st.warning("Username already exists!")
+                else:
+                    new = {"username":uname,"roll_no":roll,"password":pwd,"role":"student","semester":sem}
+                    users = users.append(new, ignore_index=True)
+                    save_users(users)
+                    st.success(f"Student {uname} added successfully!")
+
+    elif choice == "View Students":
+        st.subheader("All Students")
+        st.dataframe(users[users["role"]=="student"])
+
+    elif choice == "Add Course":
+        st.subheader("Add Course")
+        with st.form("add_course", clear_on_submit=True):
+            cname = st.text_input("Course Name")
+            sem = st.selectbox("Semester", list(range(1,9)))
+            submitted = st.form_submit_button("Add Course")
+            if submitted:
+                if cname in courses["course_name"].values:
+                    st.warning("Course already exists!")
+                else:
+                    courses = courses.append({"course_name":cname,"semester":sem}, ignore_index=True)
+                    save_courses(courses)
+                    st.success(f"Course {cname} added for Semester {sem}")
+
+    elif choice == "View Courses":
+        st.subheader("All Courses")
+        st.dataframe(courses)
+
+    elif choice == "Mark Attendance":
+        st.subheader("Mark Attendance")
+        sem = st.selectbox("Select Semester", list(range(1,9)), key="att_sem")
+        sem_students = users[(users["role"]=="student") & (users["semester"]==sem)]
+        sem_courses = courses[courses["semester"]==sem]
+        if not sem_students.empty and not sem_courses.empty:
+            st.text("Select Student and Course to mark attendance")
+            student = st.selectbox("Student", sem_students["username"], key="att_student")
+            course = st.selectbox("Course", sem_courses["course_name"], key="att_course")
+            attended = st.number_input("Attended Classes", min_value=0, step=1)
+            total = st.number_input("Total Classes", min_value=0, step=1)
+            if st.button("Submit Attendance"):
+                attendance = attendance.append({"student_username":student,"course_name":course,"attended":attended,"total":total}, ignore_index=True)
+                save_attendance(attendance)
+                st.success("Attendance added successfully!")
+        else:
+            st.warning("No students or courses in this semester.")
+
+    elif choice == "Add Results":
+        st.subheader("Add Results")
+        sem = st.selectbox("Select Semester", list(range(1,9)), key="res_sem")
+        sem_students = users[(users["role"]=="student") & (users["semester"]==sem)]
+        sem_courses = courses[courses["semester"]==sem]
+        if not sem_students.empty and not sem_courses.empty:
+            student = st.selectbox("Student", sem_students["username"], key="res_student")
+            course = st.selectbox("Course", sem_courses["course_name"], key="res_course")
+            marks = st.number_input("Marks", min_value=0, step=1)
+            if st.button("Submit Marks"):
+                results = results.append({"student_username":student,"course_name":course,"marks":marks}, ignore_index=True)
+                save_results(results)
+                st.success("Results added successfully!")
+        else:
+            st.warning("No students or courses in this semester.")
+
+    elif choice == "View Results":
+        st.subheader("All Results")
+        st.dataframe(results)
+
     else:
-        return pd.DataFrame(columns=cols)
+        st.info("Feature coming soon!")
 
-def save_data(df, file):
-    df.to_csv(file, index=False)
+# --- Student Dashboard ---
+def student_dashboard(username):
+    st.markdown("<h2 style='color:purple;'>Student Dashboard</h2>", unsafe_allow_html=True)
+    users = load_users()
+    courses = load_courses()
+    attendance = load_attendance()
+    results = load_results()
 
-# --- INITIAL DATA ---
-users = load_data(USERS_FILE, ["username", "roll_no", "password", "role"])
-results = load_data(RESULTS_FILE, ["roll_no", "course", "marks"])
-attendance = load_data(ATTEND_FILE, ["roll_no", "course", "attendance"])
+    user = users[users["username"]==username].iloc[0]
+    st.text(f"Name: {username}")
+    st.text(f"Roll Number: {user['roll_no']}")
+    st.text(f"Semester: {user['semester']}")
 
-# --- LOGIN ---
-st.title("Superior University AI Department Portal")
+    st.subheader("Courses")
+    sem_courses = courses[courses["semester"]==user["semester"]]
+    st.dataframe(sem_courses)
 
-if "login_success" not in st.session_state:
-    st.session_state.login_success = False
-if "current_user" not in st.session_state:
-    st.session_state.current_user = None
+    st.subheader("Attendance")
+    sem_attendance = attendance[attendance["student_username"]==username]
+    st.dataframe(sem_attendance)
 
-if not st.session_state.login_success:
+    st.subheader("Results")
+    sem_results = results[results["student_username"]==username]
+    st.dataframe(sem_results)
+
+    # Change password
+    st.subheader("Change Password")
+    new_pwd = st.text_input("New Password", type="password", key="newpwd")
+    if st.button("Update Password"):
+        users.loc[users["username"]==username,"password"] = new_pwd
+        save_users(users)
+        st.success("Password updated successfully!")
+
+# --- Login Page ---
+def main():
+    st.set_page_config(page_title="Superior University AI Department", layout="wide")
+    st.markdown("<h1 style='color:purple;'>Superior University AI Department Portal</h1>", unsafe_allow_html=True)
+    init_csv()
+    users = load_users()
+
     username = st.text_input("Username", key="login_user")
     password = st.text_input("Password", type="password", key="login_pass")
-    if st.button("Login", key="login_btn"):
-        user_row = users[(users["username"]==username) & (users["password"]==password)]
-        if not user_row.empty:
-            st.session_state.login_success = True
-            st.session_state.current_user = user_row.iloc[0]
-            st.experimental_rerun()  # refresh to show dashboard
+
+    if st.button("Login"):
+        user = users[(users["username"]==username) & (users["password"]==password)]
+        if not user.empty:
+            role = user.iloc[0]["role"]
+            st.session_state["logged_in_user"] = username
+            if role == "admin":
+                admin_dashboard(username)
+            else:
+                student_dashboard(username)
         else:
             st.error("Invalid credentials or user not registered.")
 
-# --- DASHBOARD ---
-if st.session_state.login_success:
-    user = st.session_state.current_user
-    st.markdown(f"<h2>Welcome, {user['username']} ({user['role']})</h2>", unsafe_allow_html=True)
-
-    if user["role"] == "admin":
-        st.subheader("Admin Dashboard")
-        col1, col2 = st.columns(2)
-
-        with col1:
-            if st.button("Add Student", key="add_student"):
-                with st.form("add_student_form"):
-                    name = st.text_input("Student Name", key="as_name")
-                    roll = st.text_input("Roll Number", key="as_roll")
-                    pwd = st.text_input("Password", type="password", key="as_pwd")
-                    semester = st.selectbox("Semester", [1,2,3,4,5,6,7,8], key="as_sem")
-                    submit = st.form_submit_button("Add Student")
-                    if submit:
-                        if ((users["username"]==name) & (users["roll_no"]==roll)).any():
-                            st.error("Student already exists!")
-                        else:
-                            users.loc[len(users)] = [name, roll, pwd, "student"]
-                            save_data(users, USERS_FILE)
-                            st.success(f"Student {name} added successfully!")
-
-            if st.button("View Students", key="view_students"):
-                st.dataframe(users[users["role"]=="student"])
-
-        with col2:
-            if st.button("Add Course", key="add_course"):
-                st.info("Course feature coming soon.")
-
-            if st.button("View Courses", key="view_courses"):
-                st.info("Course feature coming soon.")
-
-        if st.button("Mark Attendance", key="mark_attendance"):
-            st.info("Attendance feature coming soon.")
-
-        if st.button("Add Results", key="add_results"):
-            st.info("Results feature coming soon.")
-
-        if st.button("View Results", key="view_results"):
-            st.info("Results feature coming soon.")
-
-    else:
-        st.subheader("Student Dashboard")
-        st.markdown(f"**Roll Number:** {user['roll_no']}")
-
-        # Show results
-        st.markdown("### Results")
-        my_results = results[results["roll_no"]==user["roll_no"]]
-        if my_results.empty:
-            st.info("No results yet.")
-        else:
-            st.dataframe(my_results)
-
-        # Show attendance
-        st.markdown("### Attendance")
-        my_attend = attendance[attendance["roll_no"]==user["roll_no"]]
-        if my_attend.empty:
-            st.info("No attendance recorded yet.")
-        else:
-            st.dataframe(my_attend)
-
-        # Change password
-        st.markdown("### Change Password")
-        new_pwd = st.text_input("New Password", type="password", key="change_pwd")
-        if st.button("Update Password", key="update_pwd"):
-            users.loc[users["username"]==user["username"], "password"] = new_pwd
-            save_data(users, USERS_FILE)
-            st.success("Password updated successfully!")
-
-    if st.button("Logout", key="logout"):
-        st.session_state.login_success = False
-        st.session_state.current_user = None
-        st.experimental_rerun()
+if __name__ == "__main__":
+    main()
