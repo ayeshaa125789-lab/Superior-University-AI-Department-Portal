@@ -98,7 +98,7 @@ if not st.session_state['login']:
     st.subheader("Login")
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
-    if st.button("Login"):
+    if st.button("Login", key="login_button"):
         if authenticate(username, password):
             st.session_state['login'] = True
             st.session_state['username'] = username
@@ -110,7 +110,7 @@ if not st.session_state['login']:
 # --- LOGOUT ---
 if st.session_state['login']:
     st.sidebar.write(f"Logged in as: {st.session_state['username']} ({st.session_state['role']})")
-    if st.sidebar.button("Logout"):
+    if st.sidebar.button("Logout", key="logout_button"):
         st.session_state['login'] = False
         st.session_state['username'] = ''
         st.session_state['role'] = ''
@@ -129,10 +129,10 @@ if st.session_state['login'] and st.session_state['role'] == 'admin':
     
     # --- Add User ---
     with tab2:
-        new_username = st.text_input("New Username")
-        new_password = st.text_input("New Password", type="password")
-        role_option = st.selectbox("Role", ["student", "teacher", "admin"])
-        if st.button("Add User"):
+        new_username = st.text_input("New Username", key="add_username")
+        new_password = st.text_input("New Password", type="password", key="add_password")
+        role_option = st.selectbox("Role", ["student", "teacher", "admin"], key="add_role")
+        if st.button("Add User", key="add_user_button"):
             if add_user(new_username, new_password, role_option):
                 st.success(f"User '{new_username}' added successfully!")
             else:
@@ -140,8 +140,8 @@ if st.session_state['login'] and st.session_state['role'] == 'admin':
     
     # --- Delete User ---
     with tab3:
-        del_username = st.selectbox("Select User to Delete", users_df['username'].tolist())
-        if st.button("Delete User"):
+        del_username = st.selectbox("Select User to Delete", users_df['username'].tolist(), key="del_username")
+        if st.button("Delete User", key="delete_user_button"):
             if del_username == st.session_state['username']:
                 st.error("You cannot delete yourself!")
             elif delete_user(del_username):
@@ -163,9 +163,9 @@ if st.session_state['login'] and st.session_state['role'] in ['student', 'teache
     
     # --- Change Password ---
     with tab2:
-        old_pw = st.text_input("Old Password", type="password")
-        new_pw = st.text_input("New Password", type="password")
-        if st.button("Update Password"):
+        old_pw = st.text_input("Old Password", type="password", key="old_pw")
+        new_pw = st.text_input("New Password", type="password", key="new_pw")
+        if st.button("Update Password", key="update_pw_button"):
             if authenticate(st.session_state['username'], old_pw):
                 update_password(st.session_state['username'], new_pw)
                 st.success("Password updated successfully!")
@@ -175,8 +175,8 @@ if st.session_state['login'] and st.session_state['role'] in ['student', 'teache
     # --- Assignments ---
     with tab3:
         st.subheader("Upload Assignment")
-        uploaded_file = st.file_uploader("Choose a file", type=["pdf","docx","txt"])
-        if st.button("Upload"):
+        uploaded_file = st.file_uploader("Choose a file", type=["pdf","docx","txt"], key="file_uploader")
+        if st.button("Upload", key="upload_assignment_button"):
             if uploaded_file:
                 upload_assignment(st.session_state['username'], uploaded_file)
                 st.success(f"{uploaded_file.name} uploaded successfully!")
