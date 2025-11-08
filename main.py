@@ -15,15 +15,6 @@ UPLOAD_FOLDER = "uploads"
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
-# ------------------ INITIAL ADMIN SETUP ------------------
-if not os.path.exists(USER_FILE):
-    users = pd.DataFrame([{
-        "username": "admin",
-        "password": "",  # empty password for first login
-        "role": "admin"
-    }])
-    users.to_csv(USER_FILE, index=False)
-
 # ------------------ HELPER FUNCTIONS ------------------
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
@@ -41,14 +32,9 @@ def save_csv(df, file):
 
 def authenticate(username, password):
     users = load_csv(USER_FILE, ["username","password","role"])
-    if username in users["username"].values:
-        stored_pw = users[users["username"]==username]["password"].values[0]
-        # Allow empty password only for admin
-        if username == "admin" and stored_pw == "":
-            return True
-        hashed_pw = hash_password(password)
-        return stored_pw == hashed_pw
-    return False
+    hashed_pw = hash_password(password)
+    user = users[(users["username"]==username) & (users["password"]==hashed_pw)]
+    return not user.empty
 
 def get_role(username):
     users = load_csv(USER_FILE, ["username","password","role"])
@@ -60,11 +46,9 @@ def add_user(username,password,role):
     users = load_csv(USER_FILE, ["username","password","role"])
     if username in users["username"].values:
         return False
-    users = pd.concat([users, pd.DataFrame({
-        "username":[username],
-        "password":[hash_password(password)],
-        "role":[role]
-    })], ignore_index=True)
+    users = pd.concat([users, pd.DataFrame({"username":[username],
+                                            "password":[hash_password(password)],
+                                            "role":[role]})], ignore_index=True)
     save_csv(users, USER_FILE)
     return True
 
@@ -77,6 +61,15 @@ def upload_assignment(username, file):
     save_csv(assignments, ASSIGNMENT_FILE)
     return True
 
+# ------------------ INITIAL ADMIN SETUP ------------------
+users = load_csv(USER_FILE, ["username","password","role"])
+if "admin" not in users["username"].values:
+    # default admin password
+    users = pd.concat([users,pd.DataFrame({"username":["admin"],
+                                           "password":[hash_password("admin123")],
+                                           "role":["admin"]})], ignore_index=True)
+    save_csv(users, USER_FILE)
+
 # ------------------ STREAMLIT SETUP ------------------
 st.set_page_config(page_title="AI Department Portal", layout="wide")
 
@@ -84,20 +77,10 @@ st.set_page_config(page_title="AI Department Portal", layout="wide")
 st.markdown("""
 <style>
 .stApp {background-color: #F3E5F5;}
-h1, h2, h3, h4 {color: #4A148C; text-transform: capitalize;}
-.stButton>button {
-    background-color: #6A1B9A;
-    color: white;
-    border-radius: 6px;
-    padding: 8px 18px;
-    border: none;
-    font-weight: 500;
-}
+h1, h2, h3, h4 {color: #4A148C;}
+.stButton>button {background-color: #6A1B9A; color: white; border-radius: 6px; padding: 8px 18px; border: none; font-weight: 500;}
 .stDataFrame {border: 1px solid #CE93D8;}
-input, textarea {
-    border: 1px solid #BA68C8 !important;
-    border-radius: 4px !important;
-}
+input, textarea {border: 1px solid #BA68C8 !important; border-radius: 4px !important;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -119,8 +102,7 @@ if not st.session_state['login']:
             st.session_state['login'] = True
             st.session_state['username'] = username
             st.session_state['role'] = get_role(username)
-            st.experimental_set_query_params()  # updated for Streamlit 1.51+ to replace experimental_rerun
-            st.experimental_rerun = lambda: None  # safe dummy if used later
+            st.experimental_rerun()
         else:
             st.error("Invalid username or password")
 
@@ -131,7 +113,7 @@ if st.session_state['login']:
         st.session_state['login'] = False
         st.session_state['username'] = ''
         st.session_state['role'] = ''
-        st.experimental_set_query_params()
+        st.experimental_rerun()
 
 # ------------------ DASHBOARD ------------------
 if st.session_state['login']:
@@ -141,20 +123,13 @@ if st.session_state['login']:
     # ================= ADMIN DASHBOARD =================
     if role=="admin":
         st.header("Admin Dashboard")
-
-        students = load_csv(USER_FILE, ["username","password","role"])
+        users_df = load_csv(USER_FILE, ["username","password","role"])
         courses = load_csv(COURSE_FILE, ["course_code","course_name","teacher"])
         assignments = load_csv(ASSIGNMENT_FILE, ["username","filename"])
         news = load_csv(NEWS_FILE, ["title","description"])
 
-        col1,col2,col3,col4 = st.columns(4)
-        col1.metric("Students", len(students[students["role"]=="student"]))
-        col2.metric("Teachers", len(students[students["role"]=="teacher"]))
-        col3.metric("Courses", len(courses))
-        col4.metric("Assignments", len(assignments))
-
         st.subheader("Manage Users")
-        st.dataframe(students)
+        st.dataframe(users_df)
         new_user = st.text_input("Username", key="new_user")
         new_pass = st.text_input("Password", type="password", key="new_pass")
         new_role = st.selectbox("Role", ["student","teacher","admin"], key="new_role")
@@ -188,27 +163,12 @@ if st.session_state['login']:
         st.subheader("Assignments Overview")
         st.dataframe(assignments)
 
-        st.subheader("Set / Change Admin Password")
-        new_pw = st.text_input("New Password", type="password", key="admin_pw")
-        if st.button("Set Password"):
-            if new_pw.strip() != "":
-                users.loc[users["username"]=="admin","password"] = hash_password(new_pw)
-                save_csv(users, USER_FILE)
-                st.success("Admin password set successfully!")
-
     # ================= TEACHER DASHBOARD =================
     elif role=="teacher":
         st.header("Teacher Dashboard")
-
         attendance = load_csv(ATTENDANCE_FILE, ["roll_no","course_code","attendance"])
         marks = load_csv(MARKS_FILE, ["roll_no","course_code","marks"])
         courses = load_csv(COURSE_FILE, ["course_code","course_name","teacher"])
-
-        col1,col2,col3 = st.columns(3)
-        col1.metric("Total Courses", len(courses[courses["teacher"]==username]))
-        col2.metric("Students Recorded", len(attendance))
-        col3.metric("Assignments", len(load_csv(ASSIGNMENT_FILE, ["username","filename"])))
-
         st.subheader("Update Attendance")
         st.dataframe(attendance)
         rno = st.text_input("Student Roll No", key="att_rno")
@@ -238,15 +198,9 @@ if st.session_state['login']:
     # ================= STUDENT DASHBOARD =================
     elif role=="student":
         st.header("Student Dashboard")
-
         marks = load_csv(MARKS_FILE, ["roll_no","course_code","marks"])
         attendance = load_csv(ATTENDANCE_FILE, ["roll_no","course_code","attendance"])
         assignments = load_csv(ASSIGNMENT_FILE, ["username","filename"])
-
-        col1,col2,col3 = st.columns(3)
-        col1.metric("Assignments Submitted", len(assignments[assignments["username"]==username]))
-        col2.metric("Courses Enrolled", len(load_csv(COURSE_FILE, ["course_code","course_name","teacher"])))
-        col3.metric("Attendance Records", len(attendance[attendance["roll_no"]==username]))
 
         st.subheader("Profile")
         st.write(f"Username: {username}")
@@ -274,6 +228,6 @@ if st.session_state['login']:
                 users = load_csv(USER_FILE, ["username","password","role"])
                 users.loc[users["username"]==username,"password"] = hash_password(new_pw)
                 save_csv(users, USER_FILE)
-                st.success("Password changed successfully!")
+                st.success("Password changed successfully")
             else:
                 st.error("Old password incorrect")
