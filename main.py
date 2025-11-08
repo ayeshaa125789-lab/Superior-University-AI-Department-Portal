@@ -64,7 +64,6 @@ def upload_assignment(username, file):
 # ------------------ INITIAL ADMIN SETUP ------------------
 users = load_csv(USER_FILE, ["username","password","role"])
 if "admin" not in users["username"].values:
-    # default admin password
     users = pd.concat([users,pd.DataFrame({"username":["admin"],
                                            "password":[hash_password("admin123")],
                                            "role":["admin"]})], ignore_index=True)
@@ -92,35 +91,34 @@ if 'username' not in st.session_state:
 if 'role' not in st.session_state:
     st.session_state['role'] = ''
 
-# ------------------ LOGIN ------------------
-if not st.session_state['login']:
-    st.title("AI Department Portal")
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
-    if st.button("Login"):
-        if authenticate(username,password):
-            st.session_state['login'] = True
-            st.session_state['username'] = username
-            st.session_state['role'] = get_role(username)
-            st.experimental_rerun()
-        else:
-            st.error("Invalid username or password")
+# ------------------ MAIN APP ------------------
+def main():
+    if not st.session_state['login']:
+        st.title("AI Department Portal")
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        if st.button("Login"):
+            if authenticate(username,password):
+                st.session_state['login'] = True
+                st.session_state['username'] = username
+                st.session_state['role'] = get_role(username)
+            else:
+                st.error("Invalid username or password")
+        return  # stop here until login
 
-# ------------------ LOGOUT ------------------
-if st.session_state['login']:
+    # Sidebar Logout
     st.sidebar.write(f"Logged in as: {st.session_state['username']} ({st.session_state['role']})")
     if st.sidebar.button("Logout"):
         st.session_state['login'] = False
         st.session_state['username'] = ''
         st.session_state['role'] = ''
-        st.experimental_rerun()
+        st.experimental_rerun = None  # just reset state, no rerun needed
+        return
 
-# ------------------ DASHBOARD ------------------
-if st.session_state['login']:
+    # Dashboard
     username = st.session_state['username']
     role = st.session_state['role']
 
-    # ================= ADMIN DASHBOARD =================
     if role=="admin":
         st.header("Admin Dashboard")
         users_df = load_csv(USER_FILE, ["username","password","role"])
@@ -163,71 +161,4 @@ if st.session_state['login']:
         st.subheader("Assignments Overview")
         st.dataframe(assignments)
 
-    # ================= TEACHER DASHBOARD =================
-    elif role=="teacher":
-        st.header("Teacher Dashboard")
-        attendance = load_csv(ATTENDANCE_FILE, ["roll_no","course_code","attendance"])
-        marks = load_csv(MARKS_FILE, ["roll_no","course_code","marks"])
-        courses = load_csv(COURSE_FILE, ["course_code","course_name","teacher"])
-        st.subheader("Update Attendance")
-        st.dataframe(attendance)
-        rno = st.text_input("Student Roll No", key="att_rno")
-        ccode = st.text_input("Course Code", key="att_course")
-        att = st.number_input("Attendance (%)", min_value=0, max_value=100, key="att_val")
-        if st.button("Update Attendance"):
-            attendance = attendance[~((attendance["roll_no"]==rno)&(attendance["course_code"]==ccode))]
-            attendance = pd.concat([attendance,pd.DataFrame({"roll_no":[rno],
-                                                             "course_code":[ccode],
-                                                             "attendance":[att]})], ignore_index=True)
-            save_csv(attendance, ATTENDANCE_FILE)
-            st.success("Attendance updated")
-
-        st.subheader("Update Marks")
-        st.dataframe(marks)
-        rno2 = st.text_input("Student Roll No", key="mark_rno")
-        ccode2 = st.text_input("Course Code", key="mark_course")
-        mark = st.number_input("Marks", min_value=0, max_value=100, key="mark_val")
-        if st.button("Update Marks"):
-            marks = marks[~((marks["roll_no"]==rno2)&(marks["course_code"]==ccode2))]
-            marks = pd.concat([marks,pd.DataFrame({"roll_no":[rno2],
-                                                   "course_code":[ccode2],
-                                                   "marks":[mark]})], ignore_index=True)
-            save_csv(marks, MARKS_FILE)
-            st.success("Marks updated")
-
-    # ================= STUDENT DASHBOARD =================
-    elif role=="student":
-        st.header("Student Dashboard")
-        marks = load_csv(MARKS_FILE, ["roll_no","course_code","marks"])
-        attendance = load_csv(ATTENDANCE_FILE, ["roll_no","course_code","attendance"])
-        assignments = load_csv(ASSIGNMENT_FILE, ["username","filename"])
-
-        st.subheader("Profile")
-        st.write(f"Username: {username}")
-        st.write(f"Role: {role}")
-
-        st.subheader("Assignments")
-        uploaded_file = st.file_uploader("Upload Assignment", type=["pdf","docx","txt"])
-        if st.button("Upload Assignment"):
-            if uploaded_file:
-                upload_assignment(username, uploaded_file)
-                st.success("Assignment uploaded successfully")
-        st.dataframe(assignments[assignments["username"]==username])
-
-        st.subheader("My Marks")
-        st.dataframe(marks[marks["roll_no"]==username])
-
-        st.subheader("My Attendance")
-        st.dataframe(attendance[attendance["roll_no"]==username])
-
-        st.subheader("Change Password")
-        old_pw = st.text_input("Old Password", type="password")
-        new_pw = st.text_input("New Password", type="password")
-        if st.button("Change Password"):
-            if authenticate(username, old_pw):
-                users = load_csv(USER_FILE, ["username","password","role"])
-                users.loc[users["username"]==username,"password"] = hash_password(new_pw)
-                save_csv(users, USER_FILE)
-                st.success("Password changed successfully")
-            else:
-                st.error("Old password incorrect")
+main()
