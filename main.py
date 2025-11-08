@@ -33,7 +33,7 @@ def save_csv(df, file):
 def authenticate(username, password):
     users = load_csv(USER_FILE, ["username","password","role"])
     hashed_pw = hash_password(password)
-    user = users[(users["username"] == username) & (users["password"] == hashed_pw)]
+    user = users[(users["username"]==username) & (users["password"]==hashed_pw)]
     return not user.empty
 
 def get_role(username):
@@ -61,27 +61,20 @@ def upload_assignment(username, file):
     save_csv(assignments, ASSIGNMENT_FILE)
     return True
 
+# ------------------ DEFAULT ADMIN ------------------
+if not os.path.exists(USER_FILE):
+    add_user("admin","admin123","admin")  # Default admin
+
 # ------------------ STREAMLIT SETUP ------------------
 st.set_page_config(page_title="AI Department Portal", layout="wide")
 
-# Purple theme styling
 st.markdown("""
 <style>
 .stApp {background-color: #F3E5F5;}
-h1, h2, h3, h4 {color: #4A148C; text-transform: capitalize;}
-.stButton>button {
-    background-color: #6A1B9A;
-    color: white;
-    border-radius: 6px;
-    padding: 8px 18px;
-    border: none;
-    font-weight: 500;
-}
-.stDataFrame {border: 1px solid #CE93D8;}
-input, textarea {
-    border: 1px solid #BA68C8 !important;
-    border-radius: 4px !important;
-}
+h1,h2,h3,h4{color:#4A148C;}
+.stButton>button{background-color:#6A1B9A;color:white;border-radius:6px;padding:8px 18px;border:none;font-weight:500;}
+.stDataFrame{border:1px solid #CE93D8;}
+input, textarea{border:1px solid #BA68C8 !important;border-radius:4px !important;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -121,25 +114,18 @@ if st.session_state['login']:
     username = st.session_state['username']
     role = st.session_state['role']
 
-    # ================= ADMIN DASHBOARD =================
+    # ------------------ ADMIN ------------------
     if role=="admin":
         st.header("Admin Dashboard")
-
-        students = load_csv(USER_FILE, ["username","password","role"])
+        users = load_csv(USER_FILE, ["username","password","role"])
         courses = load_csv(COURSE_FILE, ["course_code","course_name","teacher"])
         assignments = load_csv(ASSIGNMENT_FILE, ["username","filename"])
         news = load_csv(NEWS_FILE, ["title","description"])
 
-        col1,col2,col3,col4 = st.columns(4)
-        col1.metric("Students", len(students[students["role"]=="student"]))
-        col2.metric("Teachers", len(students[students["role"]=="teacher"]))
-        col3.metric("Courses", len(courses))
-        col4.metric("Assignments", len(assignments))
-
-        st.subheader("Manage Users")
-        st.dataframe(students)
-        new_user = st.text_input("Username", key="new_user")
-        new_pass = st.text_input("Password", type="password", key="new_pass")
+        st.subheader("Users")
+        st.dataframe(users)
+        new_user = st.text_input("New Username", key="new_user")
+        new_pass = st.text_input("New Password", type="password", key="new_pass")
         new_role = st.selectbox("Role", ["student","teacher","admin"], key="new_role")
         if st.button("Add User", key="add_user"):
             if add_user(new_user,new_pass,new_role):
@@ -147,19 +133,17 @@ if st.session_state['login']:
             else:
                 st.error("Username already exists")
 
-        st.subheader("Manage Courses")
+        st.subheader("Courses")
         st.dataframe(courses)
         code = st.text_input("Course Code", key="code")
         cname = st.text_input("Course Name", key="cname")
         teacher = st.text_input("Teacher Username", key="teacher")
         if st.button("Add Course", key="add_course"):
-            courses = pd.concat([courses,pd.DataFrame({"course_code":[code],
-                                                       "course_name":[cname],
-                                                       "teacher":[teacher]})], ignore_index=True)
+            courses = pd.concat([courses,pd.DataFrame({"course_code":[code],"course_name":[cname],"teacher":[teacher]})], ignore_index=True)
             save_csv(courses, COURSE_FILE)
             st.success("Course added")
 
-        st.subheader("News / Announcements")
+        st.subheader("News")
         st.dataframe(news)
         ntitle = st.text_input("Title", key="ntitle")
         ndesc = st.text_area("Description", key="ndesc")
@@ -171,18 +155,12 @@ if st.session_state['login']:
         st.subheader("Assignments Overview")
         st.dataframe(assignments)
 
-    # ================= TEACHER DASHBOARD =================
+    # ------------------ TEACHER ------------------
     elif role=="teacher":
         st.header("Teacher Dashboard")
-
         attendance = load_csv(ATTENDANCE_FILE, ["roll_no","course_code","attendance"])
         marks = load_csv(MARKS_FILE, ["roll_no","course_code","marks"])
         courses = load_csv(COURSE_FILE, ["course_code","course_name","teacher"])
-
-        col1,col2,col3 = st.columns(3)
-        col1.metric("Total Courses", len(courses[courses["teacher"]==username]))
-        col2.metric("Students Recorded", len(attendance))
-        col3.metric("Assignments", len(load_csv(ASSIGNMENT_FILE, ["username","filename"])))
 
         st.subheader("Update Attendance")
         st.dataframe(attendance)
@@ -191,9 +169,7 @@ if st.session_state['login']:
         att = st.number_input("Attendance (%)", min_value=0, max_value=100, key="att_val")
         if st.button("Update Attendance"):
             attendance = attendance[~((attendance["roll_no"]==rno)&(attendance["course_code"]==ccode))]
-            attendance = pd.concat([attendance,pd.DataFrame({"roll_no":[rno],
-                                                             "course_code":[ccode],
-                                                             "attendance":[att]})], ignore_index=True)
+            attendance = pd.concat([attendance,pd.DataFrame({"roll_no":[rno],"course_code":[ccode],"attendance":[att]})], ignore_index=True)
             save_csv(attendance, ATTENDANCE_FILE)
             st.success("Attendance updated")
 
@@ -204,28 +180,16 @@ if st.session_state['login']:
         mark = st.number_input("Marks", min_value=0, max_value=100, key="mark_val")
         if st.button("Update Marks"):
             marks = marks[~((marks["roll_no"]==rno2)&(marks["course_code"]==ccode2))]
-            marks = pd.concat([marks,pd.DataFrame({"roll_no":[rno2],
-                                                   "course_code":[ccode2],
-                                                   "marks":[mark]})], ignore_index=True)
+            marks = pd.concat([marks,pd.DataFrame({"roll_no":[rno2],"course_code":[ccode2],"marks":[mark]})], ignore_index=True)
             save_csv(marks, MARKS_FILE)
             st.success("Marks updated")
 
-    # ================= STUDENT DASHBOARD =================
+    # ------------------ STUDENT ------------------
     elif role=="student":
         st.header("Student Dashboard")
-
+        assignments = load_csv(ASSIGNMENT_FILE, ["username","filename"])
         marks = load_csv(MARKS_FILE, ["roll_no","course_code","marks"])
         attendance = load_csv(ATTENDANCE_FILE, ["roll_no","course_code","attendance"])
-        assignments = load_csv(ASSIGNMENT_FILE, ["username","filename"])
-
-        col1,col2,col3 = st.columns(3)
-        col1.metric("Assignments Submitted", len(assignments[assignments["username"]==username]))
-        col2.metric("Courses Enrolled", len(load_csv(COURSE_FILE, ["course_code","course_name","teacher"])))
-        col3.metric("Attendance Records", len(attendance[attendance["roll_no"]==username]))
-
-        st.subheader("Profile")
-        st.write(f"Username: {username}")
-        st.write(f"Role: {role}")
 
         st.subheader("Assignments")
         uploaded_file = st.file_uploader("Upload Assignment", type=["pdf","docx","txt"])
