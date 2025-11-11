@@ -249,11 +249,11 @@ def student_dashboard():
         # Ensure 'date' is present and valid for sorting
         news_valid = [item for item in news if item.get('date')]
         try:
-             # Sort by date descending
+            # Sort by date descending
             news_valid.sort(key=lambda x: datetime.strptime(str(x['date']), "%Y-%m-%d %H:%M:%S"), reverse=True)
         except:
-             # Fallback if date format is inconsistent
-             pass
+            # Fallback if date format is inconsistent
+            pass
         
         latest_news = news_valid[:3] # Show last 3 news items
         for item in latest_news:
@@ -346,10 +346,10 @@ def news_management():
         # Ensure 'date' is present and valid for sorting
         news_valid = [item for item in news_items if item.get('date')]
         try:
-             # Sort by date descending
+            # Sort by date descending
             news_valid.sort(key=lambda x: datetime.strptime(str(x['date']), "%Y-%m-%d %H:%M:%S"), reverse=True)
         except:
-             pass # Use unsorted list if date format is inconsistent
+            pass # Use unsorted list if date format is inconsistent
         
         for item in news_valid:
             st.markdown(f"**{item.get('title', 'No Title')}** - *{item.get('date', 'Unknown Date')}*")
@@ -519,4 +519,4 @@ def main_app():
             login_page() # Redirect dashboard view to login if not logged in
 
 if __name__ == '__main__':
-    main_app()A
+    main_app()
