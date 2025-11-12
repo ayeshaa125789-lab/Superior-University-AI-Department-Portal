@@ -13,9 +13,23 @@ def init_files():
     if not os.path.exists(USER_FILE):
         df = pd.DataFrame(columns=["username", "password", "role", "name", "roll"])
         df.to_csv(USER_FILE, index=False)
+    else:
+        df = pd.read_csv(USER_FILE)
+        for col in ["username", "password", "role", "name", "roll"]:
+            if col not in df.columns:
+                df[col] = ""
+        save_data(df, USER_FILE)
+
     if not os.path.exists(COURSE_FILE):
         df = pd.DataFrame(columns=["course_id", "course_name", "teacher"])
         df.to_csv(COURSE_FILE, index=False)
+
+    # Create default admin if not exists
+    df = pd.read_csv(USER_FILE)
+    if "admin" not in df['username'].values:
+        admin_user = pd.DataFrame([["admin", "admin123", "Admin", "Administrator", ""]], columns=df.columns)
+        df = pd.concat([df, admin_user], ignore_index=True)
+        df.to_csv(USER_FILE, index=False)
 
 init_files()
 
